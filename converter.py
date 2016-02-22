@@ -7,6 +7,9 @@ import logging
 import os
 import re
 
+import html
+import csv
+
 import base64
 from Crypto.Cipher import AES
 import hashlib
@@ -15,24 +18,42 @@ import uuid
 from thirdparty import filetimes
 from thirdparty import pkcs7
 
-VERSION = '1.1'
+VERSION = '1.1.1'
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
 
 def convert(xml, msg, result):
-    input_android = etree.parse(xml)
+    if input_type == 'xml':  # TODO: add input_type to arguments parser
+        input_android = etree.parse(xml)
+    elif input_type == 'csv':
+        f = open(xml, newline='', encoding='utf-8')  # TODO: change variable name (xml)
+        smses = csv.DictReader(f, quoting=csv.QUOTE_ALL,  # TODO: change variable name (input_android)
+                                          fieldnames=('n.u.1', 'type', 'caller', 'called', 
+                                                      'n.u.2', 'date', 'n.u.3', 'body'))  # n.u. is not used
     input_wp = etree.parse(msg)
     input_wp_root = input_wp.getroot()
 
-    smses = input_android.xpath("/smses/sms")
+    if input_type == 'xml':
+        smses = input_android.xpath("/smses/sms")
     logger.info('{} SMS to convert'.format(len(smses)))
     for sms in smses:
-        address = sms.get('address')
-        date = sms.get('date')
-        type = sms.get('type')  # 1 = received / 2 = sent
-        body = sms.get('body')
+        if input_type == 'xml':
+            address = sms.get('address')
+            date = sms.get('date')
+            type = sms.get('type')  # 1 = received / 2 = sent
+            body = sms.get('body')
+        elif input_type == 'csv:
+            if line['type'].split(',')[1] == 'RECEIVED':  # 1 = received / 2 = sent
+                type = 1
+                address = line['caller']
+            else:
+                type = 2
+                address = line['called']
+            date_new = datetime.datetime.strptime(line['date'], "%Y.%m.%d %H:%M")
+            date = int(date_new.timestamp()*10**4)  # only to keep compatibility with append_message procedure
+            body = html.escape(sms['body'])
 
         append_message(input_wp_root, address, date, type, body)
 
@@ -40,6 +61,8 @@ def convert(xml, msg, result):
                    encoding='utf-8',
                    pretty_print=True,
                    xml_declaration=True)
+    if input_type == 'csv':
+        f.close()
     logger.info('SMS converted')
 
 
